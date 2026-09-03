@@ -1,0 +1,848 @@
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Text;
+using System.Windows.Forms;
+using Timer = System.Windows.Forms.Timer;
+namespace GhostProcess;
+
+public class MainForm : Form
+{
+	private class DoubleBufferedPanel : Panel
+	{
+		public DoubleBufferedPanel()
+		{
+			DoubleBuffered = true;
+			SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, value: true);
+		}
+	}
+
+	private class StatusIndicator : Control
+	{
+		private static readonly Font TagFont = new Font("Consolas", 9.5f, FontStyle.Bold);
+
+		private static readonly Font DescFont = new Font("Consolas", 9.5f, FontStyle.Regular);
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public string LayerTag { get; }
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public string Description { get; }
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public bool IsActive { get; set; }
+
+		public StatusIndicator(string tag, string description, bool active)
+		{
+			LayerTag = tag;
+			Description = description;
+			IsActive = active;
+			DoubleBuffered = true;
+			SetStyle(ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, value: true);
+		}
+
+		protected override void OnPaint(PaintEventArgs e)
+		{
+			Graphics graphics = e.Graphics;
+			graphics.SmoothingMode = SmoothingMode.AntiAlias;
+			graphics.Clear(ColPanel);
+			int num = 12;
+			int num2 = (base.Height - num) / 2;
+			Color color = (IsActive ? ColGreen : ColGray);
+			Color color2 = (IsActive ? Color.FromArgb(60, 0, 255, 65) : Color.Transparent);
+			if (IsActive)
+			{
+				using SolidBrush brush = new SolidBrush(color2);
+				graphics.FillEllipse(brush, -2, num2 - 2, num + 4, num + 4);
+			}
+			using SolidBrush brush2 = new SolidBrush(color);
+			graphics.FillEllipse(brush2, 0, num2, num, num);
+			using Pen pen = new Pen(Color.FromArgb(IsActive ? 180 : 60, color), 1f);
+			graphics.DrawEllipse(pen, 0, num2, num, num);
+			float num3 = num + 10;
+			using SolidBrush brush3 = new SolidBrush(IsActive ? ColCyan : ColGray);
+			graphics.DrawString("[" + LayerTag + "]", TagFont, brush3, num3, (float)(base.Height - TagFont.Height) / 2f);
+			float x = num3 + graphics.MeasureString("[" + LayerTag + "]", TagFont).Width + 6f;
+			using SolidBrush brush4 = new SolidBrush(IsActive ? ColGreen : ColTextDim);
+			graphics.DrawString(Description, DescFont, brush4, x, (float)(base.Height - DescFont.Height) / 2f);
+			string text = (IsActive ? "● ACTIVE" : "○ INACTIVE");
+			Color color3 = (IsActive ? ColGreen : ColGray);
+			using Font font = new Font("Consolas", 8.5f, FontStyle.Bold);
+			SizeF sizeF = graphics.MeasureString(text, font);
+			using SolidBrush brush5 = new SolidBrush(color3);
+			graphics.DrawString(text, font, brush5, (float)base.Width - sizeF.Width - 10f, (float)(base.Height - font.Height) / 2f);
+		}
+	}
+
+	private class GhostButton : Control
+	{
+		private bool _isHovered;
+
+		private bool _isPressed;
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public Color BorderColor { get; set; } = ColGreen;
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public Color HoverBorderColor { get; set; } = Color.FromArgb(100, 255, 130);
+
+		public GhostButton()
+		{
+			DoubleBuffered = true;
+			SetStyle(ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, value: true);
+			Cursor = Cursors.Hand;
+			base.Size = new Size(200, 50);
+			ForeColor = Color.White;
+		}
+
+		protected override void OnMouseEnter(EventArgs e)
+		{
+			_isHovered = true;
+			Invalidate();
+			base.OnMouseEnter(e);
+		}
+
+		protected override void OnMouseLeave(EventArgs e)
+		{
+			_isHovered = false;
+			_isPressed = false;
+			Invalidate();
+			base.OnMouseLeave(e);
+		}
+
+		protected override void OnMouseDown(MouseEventArgs e)
+		{
+			_isPressed = true;
+			Invalidate();
+			base.OnMouseDown(e);
+		}
+
+		protected override void OnMouseUp(MouseEventArgs e)
+		{
+			_isPressed = false;
+			Invalidate();
+			base.OnMouseUp(e);
+		}
+
+		protected override void OnPaint(PaintEventArgs e)
+		{
+			Graphics graphics = e.Graphics;
+			graphics.SmoothingMode = SmoothingMode.AntiAlias;
+			graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+			Rectangle rect = new Rectangle(0, 0, base.Width - 1, base.Height - 1);
+			int num = 6;
+			Color color = (_isPressed ? Color.FromArgb(45, 45, 45) : ((!_isHovered) ? Color.FromArgb(18, 18, 18) : Color.FromArgb(35, 35, 35)));
+			using GraphicsPath path = CreateRoundedRectPath(rect, num);
+			using SolidBrush brush = new SolidBrush(color);
+			graphics.FillPath(brush, path);
+			if (_isHovered)
+			{
+				using Pen pen = new Pen(Color.FromArgb(25, BorderColor), 5f);
+				graphics.DrawPath(pen, path);
+			}
+			Color color2 = (_isHovered ? HoverBorderColor : BorderColor);
+			float width = (_isHovered ? 2f : 1.2f);
+			using Pen pen2 = new Pen(color2, width);
+			graphics.DrawPath(pen2, path);
+			if (_isHovered)
+			{
+				using Pen pen3 = new Pen(Color.FromArgb(20, 255, 255, 255), 1f);
+				graphics.DrawLine(pen3, num, 1, base.Width - num - 1, 1);
+			}
+			using SolidBrush brush2 = new SolidBrush(_isHovered ? Color.FromArgb(255, color2.R, color2.G, color2.B) : color2);
+			using StringFormat format = new StringFormat
+			{
+				Alignment = StringAlignment.Center,
+				LineAlignment = StringAlignment.Center
+			};
+			graphics.DrawString(Text, Font, brush2, new RectangleF(0f, 0f, base.Width, base.Height), format);
+		}
+
+		private static GraphicsPath CreateRoundedRectPath(Rectangle rect, int radius)
+		{
+			GraphicsPath graphicsPath = new GraphicsPath();
+			int num = radius * 2;
+			graphicsPath.AddArc(rect.X, rect.Y, num, num, 180f, 90f);
+			graphicsPath.AddArc(rect.Right - num, rect.Y, num, num, 270f, 90f);
+			graphicsPath.AddArc(rect.Right - num, rect.Bottom - num, num, num, 0f, 90f);
+			graphicsPath.AddArc(rect.X, rect.Bottom - num, num, num, 90f, 90f);
+			graphicsPath.CloseFigure();
+			return graphicsPath;
+		}
+	}
+
+	private static readonly Color ColBackground = Color.FromArgb(13, 13, 13);
+
+	private static readonly Color ColPanel = Color.FromArgb(20, 20, 20);
+
+	private static readonly Color ColPanelBorder = Color.FromArgb(40, 40, 40);
+
+	private static readonly Color ColGreen = Color.FromArgb(0, 255, 65);
+
+	private static readonly Color ColCyan = Color.FromArgb(0, 200, 255);
+
+	private static readonly Color ColRed = Color.FromArgb(255, 60, 60);
+
+	private static readonly Color ColYellow = Color.FromArgb(255, 200, 0);
+
+	private static readonly Color ColDimGreen = Color.FromArgb(0, 80, 20);
+
+	private static readonly Color ColGray = Color.FromArgb(80, 80, 80);
+
+	private static readonly Color ColTextDim = Color.FromArgb(120, 120, 120);
+
+	private static readonly Color ColLogBg = Color.FromArgb(10, 10, 10);
+
+	private readonly Font _fontTitle = new Font("Consolas", 18f, FontStyle.Bold);
+
+	private readonly Font _fontSubtitle = new Font("Consolas", 9f, FontStyle.Regular);
+
+	private readonly Font _fontLabel = new Font("Consolas", 10f, FontStyle.Regular);
+
+	private readonly Font _fontLabelBold = new Font("Consolas", 10f, FontStyle.Bold);
+
+	private readonly Font _fontButton = new Font("Consolas", 11f, FontStyle.Bold);
+
+	private readonly Font _fontLog = new Font("Consolas", 9.5f, FontStyle.Regular);
+
+	private readonly Font _fontStatus = new Font("Consolas", 9f, FontStyle.Regular);
+
+	private Panel _titlePanel;
+
+	private Label _titleLabel;
+
+	private Label _subtitleLabel;
+
+	private Panel _statusPanel;
+
+	private StatusIndicator _layer2Indicator;
+
+	private StatusIndicator _layer3Indicator;
+
+	private StatusIndicator _layer4Indicator;
+
+	private StatusIndicator _layer5Indicator;
+
+	private StatusIndicator _payloadIndicator;
+
+	private Panel _configPanel;
+
+	private TextBox _masqueradeTextBox;
+
+	private Label _pidLabel;
+
+	private Label _processNameLabel;
+
+	private Panel _licensePanel;
+
+	private TextBox _activationCodeTextBox;
+
+	private Label _licenseStatusLabel;
+
+	private Label _licenseQuotaLabel;
+
+	private Label _licenseWindowLabel;
+
+	private Label _licenseHardwareLabel;
+
+	private Panel _buttonPanel;
+
+	private GhostButton _activateButton;
+
+	private GhostButton _deactivateButton;
+
+	private GhostButton _refreshButton;
+
+	private Panel _logPanel;
+
+	private RichTextBox _logBox;
+
+	private Panel _statusBarPanel;
+
+	private Label _statusBarLabel;
+
+	private Timer _uptimeTimer;
+
+	private DateTime _startTime;
+
+	private int _hookCount;
+
+	private int _ghostProcessCount;
+
+	public string MasqueradeName => _masqueradeTextBox.Text;
+
+	public string ActivationCode => _activationCodeTextBox.Text.Trim();
+
+	public event EventHandler? ActivateClicked;
+
+	public event EventHandler? DeactivateClicked;
+
+	public event EventHandler? RefreshClicked;
+
+	public MainForm()
+	{
+		InitializeComponent();
+		_startTime = DateTime.Now;
+		AppendLog("Ghost Process v2.0 initialized.", ColGreen);
+		AppendLog($"PID: {Process.GetCurrentProcess().Id}", ColCyan);
+		AppendLog("Process: " + Process.GetCurrentProcess().ProcessName, ColCyan);
+		AppendLog("Awaiting operator commands...", ColTextDim);
+	}
+
+	private void InitializeComponent()
+	{
+		base.SuspendLayout();
+		this.Text = "\ud83d\udc7b المساعد الخفي v1.0";
+		base.Size = new System.Drawing.Size(700, 880);
+		base.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
+		base.MaximizeBox = false;
+		base.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+		this.BackColor = GhostProcess.MainForm.ColBackground;
+		this.ForeColor = GhostProcess.MainForm.ColGreen;
+		this.DoubleBuffered = true;
+		base.SetStyle(System.Windows.Forms.ControlStyles.AllPaintingInWmPaint | System.Windows.Forms.ControlStyles.OptimizedDoubleBuffer, true);
+		try
+		{
+			base.Icon = GhostProcess.AppBranding.LoadApplicationIcon() ?? System.Drawing.SystemIcons.Shield;
+		}
+		catch
+		{
+		}
+		int num = 0;
+		this._titlePanel = new System.Windows.Forms.Panel
+		{
+			Location = new System.Drawing.Point(0, 0),
+			Size = new System.Drawing.Size(700, 75),
+			BackColor = System.Drawing.Color.FromArgb(8, 8, 8)
+		};
+		this._titlePanel.Paint += delegate(object? s, System.Windows.Forms.PaintEventArgs e)
+		{
+			System.Drawing.Graphics graphics = e.Graphics;
+			graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+			using System.Drawing.Pen pen = new System.Drawing.Pen(GhostProcess.MainForm.ColGreen, 1.5f);
+			graphics.DrawLine(pen, 0, this._titlePanel.Height - 1, this._titlePanel.Width, this._titlePanel.Height - 1);
+			using System.Drawing.Pen pen2 = new System.Drawing.Pen(System.Drawing.Color.FromArgb(40, 0, 255, 65), 3f);
+			graphics.DrawLine(pen2, 0, this._titlePanel.Height - 2, this._titlePanel.Width, this._titlePanel.Height - 2);
+		};
+		this._titleLabel = new System.Windows.Forms.Label
+		{
+			Text = "\ud83d\udc7b GHOST PROCESS v2.0 — Stealth Agent",
+			Font = this._fontTitle,
+			ForeColor = GhostProcess.MainForm.ColGreen,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = true,
+			Location = new System.Drawing.Point(20, 12)
+		};
+		this._subtitleLabel = new System.Windows.Forms.Label
+		{
+			Text = "▸ Cyber Security Competition Tool",
+			Font = this._fontSubtitle,
+			ForeColor = GhostProcess.MainForm.ColCyan,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = true,
+			Location = new System.Drawing.Point(24, 48)
+		};
+		this._titlePanel.Controls.Add(this._titleLabel);
+		this._titlePanel.Controls.Add(this._subtitleLabel);
+		base.Controls.Add(this._titlePanel);
+		this._titlePanel.Visible = false;
+		num = this._titlePanel.Bottom + 10;
+		this._statusPanel = this.CreateBorderedPanel(new System.Drawing.Point(15, num), new System.Drawing.Size(652, 160), "STEALTH LAYERS", GhostProcess.MainForm.ColGreen);
+		this._layer2Indicator = new GhostProcess.MainForm.StatusIndicator("Layer 2", "Process Masquerading", false)
+		{
+			Location = new System.Drawing.Point(20, 20),
+			Size = new System.Drawing.Size(610, 22)
+		};
+		this._layer3Indicator = new GhostProcess.MainForm.StatusIndicator("Layer 3", "Task Manager Hook", false)
+		{
+			Location = new System.Drawing.Point(20, 46),
+			Size = new System.Drawing.Size(610, 22)
+		};
+		this._layer4Indicator = new GhostProcess.MainForm.StatusIndicator("Layer 4", "Hypervisor Rootkit", false)
+		{
+			Location = new System.Drawing.Point(20, 72),
+			Size = new System.Drawing.Size(610, 22)
+		};
+		this._layer5Indicator = new GhostProcess.MainForm.StatusIndicator("Layer 5", "Ghost Mode (Stealth)", false)
+		{
+			Location = new System.Drawing.Point(20, 98),
+			Size = new System.Drawing.Size(610, 22)
+		};
+		this._payloadIndicator = new GhostProcess.MainForm.StatusIndicator("Payload", "Ghost Payload", false)
+		{
+			Location = new System.Drawing.Point(20, 124),
+			Size = new System.Drawing.Size(610, 22)
+		};
+		this._statusPanel.Controls.Add(this._layer2Indicator);
+		this._statusPanel.Controls.Add(this._layer3Indicator);
+		this._statusPanel.Controls.Add(this._layer4Indicator);
+		this._statusPanel.Controls.Add(this._layer5Indicator);
+		this._statusPanel.Controls.Add(this._payloadIndicator);
+		base.Controls.Add(this._statusPanel);
+		this._statusPanel.Visible = false;
+		this._licensePanel = this.CreateBorderedPanel(new System.Drawing.Point(15, this._statusPanel.Top), new System.Drawing.Size(652, 110), "ACTIVATION", GhostProcess.MainForm.ColCyan);
+		System.Windows.Forms.PictureBox value = new System.Windows.Forms.PictureBox
+		{
+			Image = GhostProcess.AppBranding.LoadLogoImage(),
+			SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom,
+			BackColor = System.Drawing.Color.Transparent,
+			Location = new System.Drawing.Point(18, 29),
+			Size = new System.Drawing.Size(34, 34)
+		};
+		System.Windows.Forms.Label value2 = new System.Windows.Forms.Label
+		{
+			Text = "Code:",
+			Font = this._fontLabelBold,
+			ForeColor = GhostProcess.MainForm.ColCyan,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = true,
+			Location = new System.Drawing.Point(64, 34)
+		};
+		this._activationCodeTextBox = new System.Windows.Forms.TextBox
+		{
+			Font = this._fontLabel,
+			ForeColor = GhostProcess.MainForm.ColGreen,
+			BackColor = System.Drawing.Color.FromArgb(15, 15, 15),
+			BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle,
+			Location = new System.Drawing.Point(122, 31),
+			Size = new System.Drawing.Size(220, 24),
+			PlaceholderText = "Activation code"
+		};
+		this._licenseStatusLabel = new System.Windows.Forms.Label
+		{
+			Text = "Status: Not activated",
+			Font = this._fontLabelBold,
+			ForeColor = GhostProcess.MainForm.ColYellow,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = false,
+			Location = new System.Drawing.Point(362, 31),
+			Size = new System.Drawing.Size(268, 24),
+			TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+		};
+		this._licenseQuotaLabel = new System.Windows.Forms.Label
+		{
+			Text = "Remaining: 0",
+			Font = this._fontLabel,
+			ForeColor = GhostProcess.MainForm.ColTextDim,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = false,
+			Location = new System.Drawing.Point(20, 67),
+			Size = new System.Drawing.Size(170, 22),
+			TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+		};
+		this._licenseWindowLabel = new System.Windows.Forms.Label
+		{
+			Text = "Window: Locked",
+			Font = this._fontLabel,
+			ForeColor = GhostProcess.MainForm.ColTextDim,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = false,
+			Location = new System.Drawing.Point(200, 67),
+			Size = new System.Drawing.Size(260, 22),
+			TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+		};
+		this._licenseHardwareLabel = new System.Windows.Forms.Label
+		{
+			Text = "HWID: loading",
+			Font = this._fontStatus,
+			ForeColor = GhostProcess.MainForm.ColTextDim,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = false,
+			Location = new System.Drawing.Point(465, 67),
+			Size = new System.Drawing.Size(170, 22),
+			TextAlign = System.Drawing.ContentAlignment.MiddleRight
+		};
+		this._licensePanel.Controls.Add(value);
+		this._licensePanel.Controls.Add(value2);
+		this._licensePanel.Controls.Add(this._activationCodeTextBox);
+		this._licensePanel.Controls.Add(this._licenseStatusLabel);
+		this._licensePanel.Controls.Add(this._licenseQuotaLabel);
+		this._licensePanel.Controls.Add(this._licenseWindowLabel);
+		this._licensePanel.Controls.Add(this._licenseHardwareLabel);
+		base.Controls.Add(this._licensePanel);
+		num = this._statusPanel.Bottom + 10;
+		this._configPanel = this.CreateBorderedPanel(new System.Drawing.Point(15, num), new System.Drawing.Size(652, 100), "CONFIGURATION", GhostProcess.MainForm.ColCyan);
+		System.Windows.Forms.Label value3 = new System.Windows.Forms.Label
+		{
+			Text = "Masquerade As:",
+			Font = this._fontLabel,
+			ForeColor = GhostProcess.MainForm.ColCyan,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = true,
+			Location = new System.Drawing.Point(20, 34)
+		};
+		this._masqueradeTextBox = new System.Windows.Forms.TextBox
+		{
+			Text = "svchost.exe",
+			Font = this._fontLabel,
+			ForeColor = GhostProcess.MainForm.ColGreen,
+			BackColor = System.Drawing.Color.FromArgb(15, 15, 15),
+			BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle,
+			Location = new System.Drawing.Point(170, 31),
+			Size = new System.Drawing.Size(200, 24)
+		};
+		int id = System.Diagnostics.Process.GetCurrentProcess().Id;
+		string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+		this._pidLabel = new System.Windows.Forms.Label
+		{
+			Text = $"▸ Current PID:  {id}",
+			Font = this._fontLabel,
+			ForeColor = GhostProcess.MainForm.ColYellow,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = true,
+			Location = new System.Drawing.Point(20, 68)
+		};
+		this._processNameLabel = new System.Windows.Forms.Label
+		{
+			Text = "▸ Process Name: " + processName,
+			Font = this._fontLabel,
+			ForeColor = GhostProcess.MainForm.ColTextDim,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = true,
+			Location = new System.Drawing.Point(300, 68)
+		};
+		this._configPanel.Controls.Add(value3);
+		this._configPanel.Controls.Add(this._masqueradeTextBox);
+		this._configPanel.Controls.Add(this._pidLabel);
+		this._configPanel.Controls.Add(this._processNameLabel);
+		base.Controls.Add(this._configPanel);
+		this._configPanel.Visible = false;
+		num = this._configPanel.Bottom + 10;
+		this._buttonPanel = new System.Windows.Forms.Panel
+		{
+			Location = new System.Drawing.Point(15, num),
+			Size = new System.Drawing.Size(652, 55),
+			BackColor = GhostProcess.MainForm.ColBackground
+		};
+		this._activateButton = new GhostProcess.MainForm.GhostButton
+		{
+			Text = "▶  ACTIVATE",
+			Location = new System.Drawing.Point(0, 0),
+			Size = new System.Drawing.Size(260, 50),
+			BorderColor = GhostProcess.MainForm.ColGreen,
+			HoverBorderColor = System.Drawing.Color.FromArgb(100, 255, 130),
+			Font = this._fontButton
+		};
+		this._activateButton.Click += delegate
+		{
+			this.ActivateClicked?.Invoke(this, System.EventArgs.Empty);
+		};
+		this._deactivateButton = new GhostProcess.MainForm.GhostButton
+		{
+			Text = "⏹  DEACTIVATE",
+			Location = new System.Drawing.Point(270, 0),
+			Size = new System.Drawing.Size(185, 50),
+			BorderColor = GhostProcess.MainForm.ColRed,
+			HoverBorderColor = System.Drawing.Color.FromArgb(255, 120, 120),
+			Font = this._fontButton
+		};
+		this._deactivateButton.Click += delegate
+		{
+			this.DeactivateClicked?.Invoke(this, System.EventArgs.Empty);
+		};
+		this._refreshButton = new GhostProcess.MainForm.GhostButton
+		{
+			Text = "\ud83d\udd04  REFRESH",
+			Location = new System.Drawing.Point(465, 0),
+			Size = new System.Drawing.Size(185, 50),
+			BorderColor = GhostProcess.MainForm.ColCyan,
+			HoverBorderColor = System.Drawing.Color.FromArgb(100, 220, 255),
+			Font = this._fontButton
+		};
+		this._refreshButton.Click += delegate
+		{
+			this.RefreshClicked?.Invoke(this, System.EventArgs.Empty);
+		};
+		this._buttonPanel.Controls.Add(this._activateButton);
+		this._buttonPanel.Controls.Add(this._deactivateButton);
+		this._buttonPanel.Controls.Add(this._refreshButton);
+		base.Controls.Add(this._buttonPanel);
+		num = this._buttonPanel.Bottom + 10;
+		this._logPanel = this.CreateBorderedPanel(new System.Drawing.Point(15, num), new System.Drawing.Size(652, 305), "ACTIVITY LOG", GhostProcess.MainForm.ColDimGreen);
+		this._logBox = new System.Windows.Forms.RichTextBox
+		{
+			Location = new System.Drawing.Point(8, 28),
+			Size = new System.Drawing.Size(636, 268),
+			ReadOnly = true,
+			BackColor = GhostProcess.MainForm.ColLogBg,
+			ForeColor = GhostProcess.MainForm.ColGreen,
+			Font = this._fontLog,
+			BorderStyle = System.Windows.Forms.BorderStyle.None,
+			ScrollBars = System.Windows.Forms.RichTextBoxScrollBars.Vertical,
+			DetectUrls = false,
+			WordWrap = true
+		};
+		this._logPanel.Controls.Add(this._logBox);
+		base.Controls.Add(this._logPanel);
+		this._logPanel.Visible = false;
+		this._logBox.Visible = false;
+		num = this._logPanel.Bottom + 8;
+		this._statusBarPanel = new System.Windows.Forms.Panel
+		{
+			Location = new System.Drawing.Point(0, num),
+			Size = new System.Drawing.Size(700, 32),
+			BackColor = System.Drawing.Color.FromArgb(8, 8, 8)
+		};
+		this._statusBarPanel.Paint += delegate(object? s, System.Windows.Forms.PaintEventArgs e)
+		{
+			System.Drawing.Graphics graphics = e.Graphics;
+			using System.Drawing.Pen pen = new System.Drawing.Pen(GhostProcess.MainForm.ColPanelBorder, 1f);
+			graphics.DrawLine(pen, 0, 0, this._statusBarPanel.Width, 0);
+		};
+		this._statusBarLabel = new System.Windows.Forms.Label
+		{
+			Text = this.BuildStatusText(),
+			Font = this._fontStatus,
+			ForeColor = GhostProcess.MainForm.ColTextDim,
+			BackColor = System.Drawing.Color.Transparent,
+			AutoSize = false,
+			TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
+			Location = new System.Drawing.Point(15, 0),
+			Size = new System.Drawing.Size(660, 32)
+		};
+		this._statusBarPanel.Controls.Add(this._statusBarLabel);
+		base.Controls.Add(this._statusBarPanel);
+		this._uptimeTimer = new System.Windows.Forms.Timer
+		{
+			Interval = 1000,
+			Enabled = true
+		};
+		this._uptimeTimer.Tick += delegate
+		{
+			this._statusBarLabel.Text = this.BuildStatusText();
+		};
+		base.ResumeLayout(false);
+	}
+
+	protected override void OnHandleCreated(EventArgs e)
+	{
+		base.OnHandleCreated(e);
+		WindowCaptureProtection.ApplyTo(this);
+	}
+
+	public void AppendLog(string message, Color color)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				AppendLog(message, color);
+			});
+			return;
+		}
+		string text = DateTime.Now.ToString("HH:mm:ss");
+		_ = $"[{text}] {message}{Environment.NewLine}";
+		_logBox.SelectionStart = _logBox.TextLength;
+		_logBox.SelectionLength = 0;
+		string text2 = "[" + text + "] ";
+		_logBox.SelectionColor = ColTextDim;
+		_logBox.AppendText(text2);
+		_logBox.SelectionColor = color;
+		_logBox.AppendText(message + Environment.NewLine);
+		_logBox.SelectionStart = _logBox.TextLength;
+		_logBox.ScrollToCaret();
+	}
+
+	public void UpdateLayerStatus(int layer, bool active)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				UpdateLayerStatus(layer, active);
+			});
+			return;
+		}
+		switch (layer)
+		{
+		case 2:
+			_layer2Indicator.IsActive = active;
+			_layer2Indicator.Invalidate();
+			break;
+		case 3:
+			_layer3Indicator.IsActive = active;
+			_layer3Indicator.Invalidate();
+			break;
+		case 4:
+			_layer4Indicator.IsActive = active;
+			_layer4Indicator.Invalidate();
+			break;
+		case 5:
+			_layer5Indicator.IsActive = active;
+			_layer5Indicator.Invalidate();
+			break;
+		}
+	}
+
+	public void UpdateGhostModeStatus(bool active)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				UpdateGhostModeStatus(active);
+			});
+		}
+		else
+		{
+			_layer5Indicator.IsActive = active;
+			_layer5Indicator.Invalidate();
+		}
+	}
+
+	public void UpdatePayloadStatus(bool active)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				UpdatePayloadStatus(active);
+			});
+		}
+		else
+		{
+			_payloadIndicator.IsActive = active;
+			_payloadIndicator.Invalidate();
+		}
+	}
+
+	public void UpdateGhostProcessCount(int count)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				UpdateGhostProcessCount(count);
+			});
+		}
+		else
+		{
+			_ghostProcessCount = count;
+			_statusBarLabel.Text = BuildStatusText();
+		}
+	}
+
+	public void UpdateHookCount(int count)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				UpdateHookCount(count);
+			});
+		}
+		else
+		{
+			_hookCount = count;
+			_statusBarLabel.Text = BuildStatusText();
+		}
+	}
+
+	internal void SetActivationBusy(bool busy)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				SetActivationBusy(busy);
+			});
+			return;
+		}
+		_activateButton.Enabled = !busy;
+		_refreshButton.Enabled = !busy;
+		_activationCodeTextBox.Enabled = !busy;
+		_licenseStatusLabel.Text = (busy ? "Status: Checking..." : _licenseStatusLabel.Text);
+		if (busy)
+		{
+			_licenseStatusLabel.ForeColor = ColYellow;
+		}
+	}
+
+	internal void SetLicenseSnapshot(LicenseSnapshot snapshot)
+	{
+		if (base.InvokeRequired)
+		{
+			Invoke(delegate
+			{
+				SetLicenseSnapshot(snapshot);
+			});
+			return;
+		}
+		string text = (snapshot.CanUseOverlay ? "Status: Activated" : (snapshot.IsActivated ? "Status: Locked" : "Status: Not activated"));
+		_licenseStatusLabel.Text = text;
+		_licenseStatusLabel.ForeColor = (snapshot.CanUseOverlay ? ColGreen : (snapshot.IsActivated ? ColYellow : ColRed));
+		string value = (string.IsNullOrWhiteSpace(snapshot.DisplayName) ? string.Empty : (" (" + snapshot.DisplayName + ")"));
+		_licenseQuotaLabel.Text = $"Remaining: {snapshot.RemainingQuestions}{value}";
+		_licenseQuotaLabel.ForeColor = ((snapshot.RemainingQuestions > 0) ? ColGreen : ColYellow);
+		_licenseWindowLabel.Text = "Window: " + FormatLicenseWindow(snapshot);
+		_licenseWindowLabel.ForeColor = (snapshot.AllowedNow ? ColGreen : ColTextDim);
+		string hardwareId = snapshot.HardwareId;
+		_licenseHardwareLabel.Text = (string.IsNullOrWhiteSpace(hardwareId) ? "HWID: unavailable" : ("HWID: " + hardwareId.Substring(0, Math.Min(12, hardwareId.Length))));
+	}
+
+	private static string FormatLicenseWindow(LicenseSnapshot snapshot)
+	{
+		if (!snapshot.WindowStart.HasValue || !snapshot.WindowEnd.HasValue)
+		{
+			if (!snapshot.AllowedNow)
+			{
+				return "Locked";
+			}
+			return "Open";
+		}
+		return $"{snapshot.WindowStart.Value.LocalDateTime:HH:mm} - {snapshot.WindowEnd.Value.LocalDateTime:HH:mm}";
+	}
+
+	private string BuildStatusText()
+	{
+		TimeSpan timeSpan = DateTime.Now - _startTime;
+		string value = $"{(int)timeSpan.TotalHours:D2}:{timeSpan.Minutes:D2}:{timeSpan.Seconds:D2}";
+		return $"  PID: {Process.GetCurrentProcess().Id}   │   Hooks: {_hookCount}   │   Ghost Procs: {_ghostProcessCount}   │   Uptime: {value}   │   Status: STANDBY";
+	}
+
+	private Panel CreateBorderedPanel(Point location, Size size, string header, Color borderColor)
+	{
+		DoubleBufferedPanel panel = new DoubleBufferedPanel
+		{
+			Location = location,
+			Size = size,
+			BackColor = ColPanel
+		};
+		panel.Paint += delegate(object? s, PaintEventArgs e)
+		{
+			Graphics graphics = e.Graphics;
+			graphics.SmoothingMode = SmoothingMode.AntiAlias;
+			using Pen pen = new Pen(Color.FromArgb(30, borderColor), 3f);
+			graphics.DrawRectangle(pen, 1, 1, panel.Width - 3, panel.Height - 3);
+			using Pen pen2 = new Pen(borderColor, 1.2f);
+			graphics.DrawRectangle(pen2, 0, 0, panel.Width - 1, panel.Height - 1);
+			using Font font = new Font("Consolas", 8f, FontStyle.Bold);
+			using SolidBrush brush = new SolidBrush(borderColor);
+			SizeF sizeF = graphics.MeasureString(header, font);
+			RectangleF rect = new RectangleF(12f, 3f, sizeF.Width + 8f, sizeF.Height + 2f);
+			using SolidBrush brush2 = new SolidBrush(ColPanel);
+			graphics.FillRectangle(brush2, rect);
+			graphics.DrawString(" " + header + " ", font, brush, 14f, 4f);
+		};
+		return panel;
+	}
+
+	protected override void Dispose(bool disposing)
+	{
+		if (disposing)
+		{
+			_uptimeTimer?.Stop();
+			_uptimeTimer?.Dispose();
+			_fontTitle.Dispose();
+			_fontSubtitle.Dispose();
+			_fontLabel.Dispose();
+			_fontLabelBold.Dispose();
+			_fontButton.Dispose();
+			_fontLog.Dispose();
+			_fontStatus.Dispose();
+		}
+		base.Dispose(disposing);
+	}
+}
